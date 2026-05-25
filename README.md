@@ -1,46 +1,71 @@
-# Zed
+# iZed? Zios? zedios?
 
-[![Zed](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/zed-industries/zed/main/assets/badge/v0.json)](https://zed.dev)
-[![CI](https://github.com/zed-industries/zed/actions/workflows/run_tests.yml/badge.svg)](https://github.com/zed-industries/zed/actions/workflows/run_tests.yml)
+**An experiment in running [Zed](https://github.com/zed-industries/zed) — the real editor, not a reskin — on iOS.**
 
-Welcome to Zed, a high-performance, multiplayer code editor from the creators of [Atom](https://github.com/atom/atom) and [Tree-sitter](https://github.com/tree-sitter/tree-sitter).
+This branch is a *clean fork of upstream `zed-industries/zed`*. We add an iOS platform layer
+to gpui and stub out what the iOS kernel forbids, rather than booting Zed inside a Linux
+userland (the approach the [Android port](https://github.com/Dylanmurzello/zed-android-port)
+takes — which doesn't translate to iOS). We *learn* from that Android port and lift the
+iOS-specific pieces from [`itsbalamurali/gpui-mobile`](https://github.com/itsbalamurali/gpui-mobile).
 
----
+> Status: planning / early. See [`docs/ios-port-plan.md`](docs/ios-port-plan.md) for the full plan.
 
-### Installation
+## The idea in one diagram
 
-On macOS, Linux, and Windows you can [download Zed directly](https://zed.dev/download) or install Zed via your local package manager ([macOS](https://zed.dev/docs/installation#macos)/[Linux](https://zed.dev/docs/linux#installing-via-a-package-manager)/[Windows](https://zed.dev/docs/windows#package-managers)).
+```
+Zed editor stack (editor, text, rope, language, git)   <- runs unchanged
+            |
+          gpui  <- platform-agnostic UI framework
+            |
+  gpui_platform::current_platform()   <- one #[cfg] seam
+            |
+   +--------+---------+--------------+
+ gpui_macos      gpui_linux       gpui_ios  <-- NEW (this project)
+        |                            |
+        +---- shares Metal renderer -+   (iOS Metal == macOS Metal API)
+                                     |
+                 UIKit view . CADisplayLink . UITextInput . UITouch
+                 (reference: gpui-mobile)
+```
 
-Other platforms are not yet available:
+## Why this approach
 
-- Web ([tracking issue](https://github.com/zed-industries/zed/issues/5396))
+- **iOS is not Linux.** No userland, no JIT, no spawning arbitrary binaries — these are
+  *kernel-enforced*, so they hold even when sideloaded. That rules out language servers,
+  the WASM extension host, the terminal, and the bundled `git` binary.
+- **But the editor is portable.** `editor`/`text`/`rope`/`language` run anywhere gpui runs.
+- **And the renderer already exists.** Upstream gpui has a Metal renderer in `gpui_macos`;
+  iOS Metal is the same API, so we reuse it. Only windowing/input/lifecycle is rewritten
+  AppKit -> UIKit.
 
-### Developing Zed
+So the work is: **(A)** a new `crates/gpui_ios` (template: `crates/gpui_macos`), **(B)**
+feature-gating the sandbox-forbidden subsystems off, and **(C)** routing git through
+libgit2 in-process (desktop Zed shells out to a `git` binary we can't run on iOS).
 
-- [Building Zed for macOS](./docs/src/development/macos.md)
-- [Building Zed for Linux](./docs/src/development/linux.md)
-- [Building Zed for Windows](./docs/src/development/windows.md)
+## Milestones
 
-### Contributing
+| # | Milestone | Acceptance |
+|---|-----------|------------|
+| **M0** | Rebase & build skeleton | `cargo build` green for `aarch64-apple-ios(-sim)`; empty host app launches on simulator |
+| **M1** | Pixels on screen | `crates/gpui_ios` renders an animating gpui view on the simulator (Metal + `CADisplayLink` + UIKit) |
+| **M2** | Boot the workspace | LSP/extensions/terminal/node/updater feature-gated off; empty Zed workspace renders |
+| **M3** | Editor parity | Open/edit/save a real file — rope, tree-sitter, multi-cursor, find/replace — with iOS keyboard, IME, touch selection |
+| **M4** | Files & project | `UIDocumentPicker` + security-scoped bookmarks; project panel; multi-buffer tabs |
+| **M5** | Git (local) | status / stage / commit / diff via libgit2, entirely on-device |
+| **M6** | Git (remote) | clone / fetch / pull / push via libgit2 `https`+`ssh`; credentials in Keychain |
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for ways you can contribute to Zed.
+Target for now: **dev/sideload + simulator** (Xcode signing). App Store distribution is a
+later concern.
 
-Also... we're hiring! Check out our [jobs](https://zed.dev/jobs) page for open roles.
+## Credits
 
-### Licensing
+- [Zed](https://github.com/zed-industries/zed) by Zed Industries — the editor and gpui.
+- [gpui-mobile](https://github.com/itsbalamurali/gpui-mobile) by @itsbalamurali — iOS/Android
+  `gpui::Platform` reference implementation.
+- [zed-android-port](https://github.com/Dylanmurzello/zed-android-port) by @Dylanmurzello —
+  mobile platform module-shape reference.
 
-License information for third party dependencies must be correctly provided for CI to pass.
+## License
 
-We use [`cargo-about`](https://github.com/EmbarkStudios/cargo-about) to automatically comply with open source licenses. If CI is failing, check the following:
-
-- Is it showing a `no license specified` error for a crate you've created? If so, add `publish = false` under `[package]` in your crate's Cargo.toml.
-- Is the error `failed to satisfy license requirements` for a dependency? If so, first determine what license the project has and whether this system is sufficient to comply with this license's requirements. If you're unsure, ask a lawyer. Once you've verified that this system is acceptable add the license's SPDX identifier to the `accepted` array in `script/licenses/zed-licenses.toml`.
-- Is `cargo-about` unable to find the license for a dependency? If so, add a clarification field at the end of `script/licenses/zed-licenses.toml`, as specified in the [cargo-about book](https://embarkstudios.github.io/cargo-about/cli/generate/config.html#crate-configuration).
-
-## Sponsorship
-
-Zed is developed by **Zed Industries, Inc.**, a for-profit company.
-
-If you’d like to financially support the project, you can do so via GitHub Sponsors.
-Sponsorships go directly to Zed Industries and are used as general company revenue.
-There are no perks or entitlements associated with sponsorship.
+Inherits Zed's licensing (GPL-3.0 / AGPL-3.0 / Apache-2.0 as applicable per crate). See the
+upstream license files retained in this fork.

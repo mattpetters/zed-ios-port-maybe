@@ -5,7 +5,8 @@
 <h1 align="center">iZed? Zios? zedios?</h1>
 
 <p align="center"><sub><em>This is a project idea will see how far we get.</em></sub></p>
-
+<br><p>below copy from upstream</p>
+<hr/>
 <p align="center">
   Started as a joke. Rust on aarch64, sounded portable. Laughed about it. Kept going. Couldn't stop. There's an APK.
 </p>
